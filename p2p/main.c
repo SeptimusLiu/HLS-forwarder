@@ -16,8 +16,8 @@
 #define PORT 8081
 #define HOST "127.0.0.1"
 
-#define SOURCE_HOST "http://tv6.byr.cn/hls/cctv5hd.m3u8"
-#define SERVER_NAME "http://tv6.byr.cn/hls/"
+#define SOURCE_HOST "http://10.3.220.152/hls/cctv5hd.m3u8"
+#define SERVER_NAME "http://10.3.220.152/hls/"
 #define FILE_NAME_CHUNKLIST "chunklist.m3u8"
 #define FILE_NAME_MEDIA "media.ts"
 #define DEFAULT_FILE "chunklist.m3u8"
@@ -512,7 +512,7 @@ int httpserver_start(int port, int nthreads, int backlog)
         if (i == 1)
         {
             base = base_new;
-            http_req_get = start_http_requset(base, SOURCE_HOST, REQUEST_GET_FLAG, NULL, NULL);
+            http_req_get = start_http_requset(base_new, SOURCE_HOST, REQUEST_GET_FLAG, NULL, NULL);
         } else {
             struct evhttp *httpd = evhttp_new(base_new);
             if (httpd == NULL) return -1;

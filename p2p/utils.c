@@ -8,6 +8,7 @@
 
 #include "utils.h"
 
+#include <stdio.h>
 
 void insert_substring(char *a, char *b, int position)
 {

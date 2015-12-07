@@ -12,6 +12,7 @@
 #include "utils.h"
 #include <event2/buffer.h>
 #include <sys/stat.h>
+#include "queue.h"
 
 #define PORT 8081
 #define HOST "127.0.0.1"
@@ -22,6 +23,7 @@
 #define FILE_NAME_MEDIA "media.ts"
 #define DEFAULT_FILE "chunklist.m3u8"
 #define TIMEOUT 5
+#define MAX_SEGMENTS 5
 
 struct event_base* base;
 struct event *ev;
@@ -36,6 +38,10 @@ char filename[80];
 int counter = 0;
 struct evhttp * http_server;
 unsigned long size = 0;
+
+//char* segments_name[MAX_SEGMENTS];
+//char* segments_data[MAX_SEGMENTS];
+Queue* segments;
 
 pthread_mutex_t mutex;
 
@@ -108,25 +114,28 @@ void chunklist_cb(struct evhttp_request *req, void *arg)
             printf("media file: \n%s", chunklist);
             
             
-//            char *media1_start = strstr(tmp, "cctv");
-//            char *media1_end = strstr(media1_start, "\n");
-//            char *media1 = malloc(media1_end - media1_start);
-//            memcpy(media1, media1_start, media1_end - media1_start);
-//            media1[media1_end - media1_start] = '\0';
-//            printf("media segment: %s\n", media1);
-//            char *server_prefix = malloc(strlen(SERVER_NAME) + strlen(media1));
-//            memset(server_prefix, 0, strlen(server_prefix));
-//            memcpy(server_prefix, SERVER_NAME, strlen(SERVER_NAME));
-//            server_prefix[strlen(SERVER_NAME)] = '\0';
-//            char *media_dir = strcat(server_prefix, media1);
-//            media_dir[strlen(SERVER_NAME) + strlen(media1)] = '\0';
+            // Pick out media file name
+            char *media1_start = strstr(tmp, "cctv");
+            char *media1_end = strstr(media1_start, "\n");
+            char *media1 = malloc(media1_end - media1_start);
+            memcpy(media1, media1_start, media1_end - media1_start);
+            media1[media1_end - media1_start] = '\0';
+            char *server_prefix = malloc(strlen(SERVER_NAME) + strlen(media1));
+            memset(server_prefix, 0, strlen(server_prefix));
+            memcpy(server_prefix, SERVER_NAME, strlen(SERVER_NAME));
+            server_prefix[strlen(SERVER_NAME)] = '\0';
+            char *media_dir = strcat(server_prefix, media1);
+            media_dir[strlen(SERVER_NAME) + strlen(media1)] = '\0';
+            
+            printf("media segment: %s\n", media_dir);
             
             fprintf(storage, "%s\n", chunklist);
             
             fclose(storage);
             
-//            struct http_request_get *http_req_get_new = http_request_new(base, media_dir, REQUEST_GET_FLAG, NULL, NULL);
-//            start_media_request(http_req_get_new);
+            // Pull the media segments
+            struct http_request_get *http_req_get_new = http_request_new(base, media_dir, REQUEST_GET_FLAG, NULL, NULL);
+            start_media_request(http_req_get_new);
 
             
             if (!chunklist)
@@ -140,8 +149,8 @@ void chunklist_cb(struct evhttp_request *req, void *arg)
                 free(tmp);
                 tmp = NULL;
             }
-//            free(media1);
-//            free(server_prefix);
+            free(media1);
+            free(server_prefix);
 //            pthread_mutex_unlock (&mutex);
 
 
@@ -196,7 +205,8 @@ void download_cb(struct evhttp_request *req, void *arg)
         printf("Cannot open download!");
         return;
     }
-    printf("Downloading %s\n", (char*)http_req_get->uri);
+    printf("Downloading %s\n", (char*)(evhttp_uri_get_path(http_req_get->uri)));
+
     
     switch(req->response_code)
     {
@@ -205,12 +215,28 @@ void download_cb(struct evhttp_request *req, void *arg)
             struct evbuffer* buf = evhttp_request_get_input_buffer(req);
             size_t len = evbuffer_get_length(buf);
             
-            printf("len:%zu  media size:%zu\n", len, req->body_size);
+            printf("len:%zu media size:%zu\n", len, req->body_size);
+            
+            char *uri = (char*)(evhttp_uri_get_path(http_req_get->uri));
+            char *media_segment = malloc(sizeof(strlen(uri)));
+            memcpy(media_segment, uri, strlen(uri));
             
 //            process_func((char*)http_req_get->uri, buf);
+            
             char *tmp = malloc(len+1);
-            fwrite(evbuffer_pullup(buf, -1), len, 1, storage);
+            evbuffer_copyout(buf, tmp, len);
+//            tmp[len] = '\0';
+            
+            if (!HasElements(segments, media_segment)) {
+                EnQueue(segments, tmp, media_segment, len+1, strlen(media_segment));
+            }
+            
+            printf("%s", tmp);
+
+//            fwrite(evbuffer_pullup(buf, -1), len, 1, storage);
             free(tmp);
+            free(media_segment);
+            media_segment = NULL;
             
             fclose(storage);
             break;
@@ -551,6 +577,7 @@ int main(int argc, char *argv[])
 //        printf("http server start failed! \n");
 //        return -1;
 //    }
+    segments = InitQueue();
     pthread_mutex_init(&mutex, NULL);
 
     httpserver_start(PORT, 2, 10240);

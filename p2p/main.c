@@ -217,26 +217,26 @@ void download_cb(struct evhttp_request *req, void *arg)
             
             printf("len:%zu media size:%zu\n", len, req->body_size);
             
-            char *uri = (char*)(evhttp_uri_get_path(http_req_get->uri));
-            char *media_segment = malloc(sizeof(strlen(uri)));
-            memcpy(media_segment, uri, strlen(uri));
-            
+//            char *uri = (char*)(evhttp_uri_get_path(http_req_get->uri));
+//            char *media_segment = malloc(sizeof(strlen(uri)));
+//            memcpy(media_segment, uri, strlen(uri));
+//            
 //            process_func((char*)http_req_get->uri, buf);
             
-            char *tmp = malloc(len+1);
-            evbuffer_copyout(buf, tmp, len);
+//            char *tmp = malloc(len+1);
+//            evbuffer_copyout(buf, tmp, len);
 //            tmp[len] = '\0';
             
-            if (!HasElements(segments, media_segment)) {
-                EnQueue(segments, tmp, media_segment, len+1, strlen(media_segment));
-            }
+//            if (!HasElements(segments, media_segment)) {
+//                EnQueue(segments, tmp, media_segment, len+1, strlen(media_segment));
+//            }
             
-            printf("%s", tmp);
+//            printf("%s", tmp);
 
-//            fwrite(evbuffer_pullup(buf, -1), len, 1, storage);
-            free(tmp);
-            free(media_segment);
-            media_segment = NULL;
+            fwrite(evbuffer_pullup(buf, -1), len, 1, storage);
+//            free(tmp);
+//            free(media_segment);
+//            media_segment = NULL;
             
             fclose(storage);
             break;

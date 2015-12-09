@@ -485,6 +485,7 @@ void read_media()
         }
         
         size_media = buf.st_size;
+        free(mediadata);
         mediadata = (char *)malloc(size_media + 1);
         memset(mediadata, 0, size_media + 1);
         fread(mediadata, sizeof(char), size_media, f);
@@ -540,7 +541,7 @@ void generic_handler(struct evhttp_request *req, void *arg)
         evbuffer_add(buf, mediadata, size_media);
     }
     
-//    evbuffer_add_printf(buf, "%s", filedata);
+//    evbuffer_add_printf(buf, "%s", filedata);
     
     evhttp_send_reply(req, HTTP_OK, "OK", buf);
     evbuffer_free(buf);

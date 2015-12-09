@@ -19,10 +19,13 @@
 
 #define SOURCE_HOST "http://10.3.220.152/hls/cctv5hd.m3u8"
 #define SERVER_NAME "http://10.3.220.152/hls/"
+#define LOCAL_NAME "http://127.0.0.1:8081/hls/"
 #define FILE_NAME_CHUNKLIST "chunklist.m3u8"
-#define FILE_NAME_MEDIA "media.ts"
+#define FILE_NAME_MEDIA "hls/media.ts"
+#define FILE_FOLDER "hls"
 #define DEFAULT_FILE "chunklist.m3u8"
-#define TIMEOUT 5
+#define DEFAULT_MEDIA "media.ts"
+#define TIMEOUT 10
 #define MAX_SEGMENTS 5
 
 struct event_base* base;
@@ -33,11 +36,15 @@ struct timeval tv_file;
 struct http_request_get *http_req_get;
 
 char *filedata;
+char *mediadata;
 time_t lasttime = 0;
+time_t lasttime_media = 0;
 char filename[80];
+char medianame[80];
 int counter = 0;
 struct evhttp * http_server;
 unsigned long size = 0;
+unsigned long size_media = 0;
 
 //char* segments_name[MAX_SEGMENTS];
 //char* segments_data[MAX_SEGMENTS];
@@ -48,6 +55,7 @@ pthread_mutex_t mutex;
 /** Http Callback Function **/
 
 void* httpserver_dispatch(void *arg);
+void read_media();
 
 void chunklist_cb(struct evhttp_request *req, void *arg)
 {
@@ -83,37 +91,6 @@ void chunklist_cb(struct evhttp_request *req, void *arg)
             strcpy(chunklist, tmp);
             char* blob = chunklist;
             
-            if (chunklist)
-            {
-                while (1) {
-                    char* media_prefix = strstr(blob, "cctv");
-                    char* chunklist_new = realloc(chunklist, strlen(chunklist) + strlen(SERVER_NAME) + 1);
-                    if (!media_prefix)
-                    {
-                        if (!chunklist_new)
-                        {
-                            free(chunklist_new);
-                            chunklist_new = NULL;
-                        }
-                        break;
-                    }
-                    
-                    if (!chunklist_new)
-                    {
-                        printf("realloc error!\n");
-                        return;
-                    }
-                    media_prefix += chunklist_new - chunklist;
-                    chunklist = chunklist_new;
-                    insert_substring(chunklist, SERVER_NAME, (int)(media_prefix - chunklist) + 1);
-                    blob = media_prefix + strlen(SERVER_NAME) + 4;
-                }
-            }
-            
-            
-            printf("media file: \n%s", chunklist);
-            
-            
             // Pick out media file name
             char *media1_start = strstr(tmp, "cctv");
             char *media1_end = strstr(media1_start, "\n");
@@ -137,6 +114,35 @@ void chunklist_cb(struct evhttp_request *req, void *arg)
             struct http_request_get *http_req_get_new = http_request_new(base, media_dir, REQUEST_GET_FLAG, NULL, NULL);
             start_media_request(http_req_get_new);
 
+            
+            if (chunklist)
+            {
+                while (1) {
+                    char* media_prefix = strstr(blob, "cctv");
+                    char* chunklist_new = realloc(chunklist, strlen(chunklist) + strlen(LOCAL_NAME) + 1);
+                    if (!media_prefix)
+                    {
+                        if (!chunklist_new)
+                        {
+                            free(chunklist_new);
+                            chunklist_new = NULL;
+                        }
+                        break;
+                    }
+                    
+                    if (!chunklist_new)
+                    {
+                        printf("realloc error!\n");
+                        return;
+                    }
+                    media_prefix += chunklist_new - chunklist;
+                    chunklist = chunklist_new;
+                    insert_substring(chunklist, LOCAL_NAME, (int)(media_prefix - chunklist) + 1);
+                    blob = media_prefix + strlen(LOCAL_NAME) + 4;
+                }
+            }
+            
+            printf("media file: \n%s", chunklist);
             
             if (!chunklist)
             {
@@ -198,14 +204,18 @@ void chunklist_cb(struct evhttp_request *req, void *arg)
 void download_cb(struct evhttp_request *req, void *arg)
 {
     struct http_request_get *http_req_get = (struct http_request_get *)arg;
+//    char *media_name = strstr((char*)(evhttp_uri_get_path(http_req_get->uri)), FILE_FOLDER);
+    char *media_name = DEFAULT_MEDIA;
+    
     FILE *storage;
-    storage = fopen(FILE_NAME_MEDIA, "wt");
+    storage = fopen(media_name, "wt");
+    
     if (storage == NULL)
     {
         printf("Cannot open download!");
         return;
     }
-    printf("Downloading %s\n", (char*)(evhttp_uri_get_path(http_req_get->uri)));
+    printf("Downloading %s\n", media_name);
 
     
     switch(req->response_code)
@@ -237,6 +247,7 @@ void download_cb(struct evhttp_request *req, void *arg)
 //            free(tmp);
 //            free(media_segment);
 //            media_segment = NULL;
+            read_media();
             
             fclose(storage);
             break;
@@ -447,6 +458,43 @@ void read_file()
     }
 }
 
+/** File Operating Function **/
+void read_media()
+{
+    
+    struct stat buf;
+    
+    if (stat(medianame, &buf) < 0)
+    {
+        printf("Read file error \n");
+        return;
+    }
+    
+    if (buf.st_mtime > lasttime_media)
+    {
+        if (counter++)
+            fprintf(stderr, "Reloading media: %s", medianame);
+        else
+            fprintf(stderr, "Loading media: %s", medianame);
+        
+        FILE *f = fopen(medianame, "rb");
+        if (f == NULL)
+        {
+            fprintf(stderr, "Couldn't open file\n");
+            return;
+        }
+        
+        size_media = buf.st_size;
+        mediadata = (char *)malloc(size_media + 1);
+        memset(mediadata, 0, size_media + 1);
+        fread(mediadata, sizeof(char), size_media, f);
+        fclose(f);
+        
+        fprintf(stderr, " (%ld bytes)\n", size_media);
+        lasttime_media = buf.st_mtime;
+    }
+}
+
 void read_file_timer_cb(evutil_socket_t listener, short event, void *arg)
 {
     if (!evtimer_pending(ev_file, NULL))
@@ -471,21 +519,28 @@ void generic_handler(struct evhttp_request *req, void *arg)
 {
     struct evbuffer *buf = evbuffer_new();
     char size_str[16];
-    sprintf(size_str, "%d", size);
+    
     if(!buf)
     {
         puts("failed to create response buffer \n");
         return;
     }
-    if (strstr(req->uri, ".ts"))
+    if (strstr(req->uri, ".m3u8"))
     {
-        evhttp_add_header(req->output_headers, "Content-Type", "video/mp2t");
-    } else {
+        sprintf(size_str, "%d", size);
         evhttp_add_header(req->output_headers, "Content-Type", "application/vnd.apple.mpegurl");
+        strcpy(filename, DEFAULT_FILE);
+        read_file();
+        evbuffer_add(buf, filedata, size);
+    } else {
+        sprintf(size_str, "%d", size_media);
+        evhttp_add_header(req->output_headers, "Content-Type", "video/ts");
+        strcpy(medianame, DEFAULT_MEDIA);
+        read_media();
+        evbuffer_add(buf, mediadata, size_media);
     }
     
 //    evbuffer_add_printf(buf, "%s", filedata);
-    evbuffer_add(buf, filedata, size);
     
     evhttp_send_reply(req, HTTP_OK, "OK", buf);
     evbuffer_free(buf);
